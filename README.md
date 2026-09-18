@@ -45,7 +45,7 @@ All configured models must already be available in OpenCode. Restart OpenCode af
 
 ## How It Works
 
-OpenCode's `task` tool does not accept a per-call model override. The plugin uses the documented `tool.execute.before` hook, calls `POST https://api.typesafe.ai/v1/systemone` with a Choice question whose only choices are your allowed models, then rewrites `subagent_type` to a hidden, model-bound copy of the requested subagent.
+The plugin uses the documented `tool.execute.before` hook, calls `POST https://api.typesafe.ai/v1/systemone` with a Choice question whose only choices are your allowed models, then sets the task's `model` field. It leaves the task's original `subagent_type` and description unchanged.
 
 Task resumes (`task_id`) are deliberately not rerouted, so a resumed session keeps its original model. API failures never expand the configured model allowlist and use `fallbackModel` instead.
 
@@ -75,4 +75,4 @@ For example, a task that asks `general` to implement a parser sends the followin
 }
 ```
 
-The plugin routes the built-in `general` and `explore` agents plus subagents declared in `opencode.json` under `agent`. Markdown-only subagents are left unchanged because OpenCode's plugin hook does not expose their resolved definitions for safe cloning.
+Every new task is eligible for routing, including configured and Markdown-defined subagents. Task resumes (`task_id`) retain their existing model.

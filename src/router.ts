@@ -48,10 +48,6 @@ export function parseOptions(value: unknown): Required<RouterOptions> {
   }
 }
 
-export function routedAgentName(agent: string, model: string): string {
-  return `oc-agent-router-${encode(agent)}-${encode(model)}`
-}
-
 export async function selectModel(
   options: Required<RouterOptions>,
   args: TaskArgs,
@@ -93,10 +89,6 @@ export async function selectModel(
   } finally {
     clearTimeout(timeout)
   }
-}
-
-function encode(value: string): string {
-  return Array.from(value, (character) => character.codePointAt(0)!.toString(36)).join("-")
 }
 
 function isModel(value: string): boolean {

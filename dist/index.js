@@ -17,9 +17,6 @@ function parseOptions(value) {
     fallbackModel
   };
 }
-function routedAgentName(agent, model) {
-  return `oc-agent-router-${encode(agent)}-${encode(model)}`;
-}
 async function selectModel(options, args, apiKey, fetcher = fetch) {
   if (!apiKey) return options.fallbackModel;
   const controller = new AbortController();
@@ -55,9 +52,6 @@ async function selectModel(options, args, apiKey, fetcher = fetch) {
     clearTimeout(timeout);
   }
 }
-function encode(value) {
-  return Array.from(value, (character) => character.codePointAt(0).toString(36)).join("-");
-}
 function isModel(value) {
   const separator = value.indexOf("/");
   return separator > 0 && separator < value.length - 1;
@@ -69,38 +63,13 @@ function isRecord(value) {
 // src/index.ts
 var plugin = async (_input, rawOptions) => {
   const options = parseOptions(rawOptions);
-  const routeableAgents = /* @__PURE__ */ new Set();
   return {
-    async config(config) {
-      config.agent ??= {};
-      const agents = config.agent;
-      const sourceAgents = {
-        general: agents.general ?? { mode: "subagent" },
-        explore: agents.explore ?? { mode: "subagent" },
-        ...Object.fromEntries(
-          Object.entries(agents).filter(
-            (entry) => Boolean(entry[1]) && entry[0] !== "build" && entry[0] !== "plan" && entry[1]?.mode !== "primary"
-          )
-        )
-      };
-      for (const [name, agent] of Object.entries(sourceAgents)) {
-        if (name.startsWith("oc-agent-router-")) continue;
-        routeableAgents.add(name);
-        for (const model of options.models) {
-          const routeName = routedAgentName(name, model);
-          if (agents[routeName]) continue;
-          agents[routeName] = { ...agent, model, mode: "subagent", hidden: true };
-        }
-      }
-    },
     "tool.execute.before": async (input, output) => {
       if (input.tool !== "task") return;
       const args = output.args;
       if (typeof args.subagent_type !== "string" || typeof args.prompt !== "string" || args.task_id) return;
-      if (args.subagent_type.startsWith("oc-agent-router-")) return;
-      if (!routeableAgents.has(args.subagent_type)) return;
       const model = await selectModel(options, args, process.env[options.apiKeyEnv]);
-      args.subagent_type = routedAgentName(args.subagent_type, model);
+      args.model = model;
     }
   };
 };
@@ -108,6 +77,5 @@ var index_default = plugin;
 export {
   index_default as default,
   parseOptions,
-  routedAgentName,
   selectModel
 };

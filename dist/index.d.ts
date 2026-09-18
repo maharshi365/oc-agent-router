@@ -25,9 +25,8 @@ interface FetchResponse {
 }
 type Fetcher = (input: string, init: RequestInit) => Promise<FetchResponse>;
 declare function parseOptions(value: unknown): Required<RouterOptions>;
-declare function routedAgentName(agent: string, model: string): string;
 declare function selectModel(options: Required<RouterOptions>, args: TaskArgs, apiKey: string | undefined, fetcher?: Fetcher): Promise<string>;
 
 declare const plugin: Plugin;
 
-export { type RouterOptions, plugin as default, parseOptions, routedAgentName, selectModel };
+export { type RouterOptions, plugin as default, parseOptions, selectModel };

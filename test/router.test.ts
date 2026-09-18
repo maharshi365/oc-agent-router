@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { parseOptions, routedAgentName, selectModel } from "../src/router.js"
+import { parseOptions, selectModel } from "../src/router.js"
 
 const models = ["openai/gpt-5.4", "anthropic/claude-sonnet-4-6"]
 
@@ -31,10 +31,4 @@ test("fails closed to the configured fallback", async () => {
     await selectModel(options, {}, undefined),
     models[1],
   )
-})
-
-test("names route agents deterministically", () => {
-  const first = routedAgentName("code-review", "openai/gpt-5.4")
-  assert.equal(first, routedAgentName("code-review", "openai/gpt-5.4"))
-  assert.notEqual(first, routedAgentName("code-review", "openai-gpt-5.4"))
 })
