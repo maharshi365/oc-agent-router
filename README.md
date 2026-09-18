@@ -33,11 +33,27 @@ All configured models must already be available in OpenCode. Restart OpenCode af
 
 `TYPESAFE_API_KEY` is read only from the environment of the OpenCode process. Do not put it in `opencode.json`.
 
+## Local Testing
+
+This repository includes `opencode.jsonc`, which loads the built plugin directly from `./dist/index.js`. Before starting OpenCode from this directory, update its `models` and `fallbackModel` to model IDs enabled in your OpenCode configuration.
+
+```sh
+npm run build
+TYPESAFE_API_KEY=... opencode
+```
+
+Ask OpenCode to delegate work with a `task` subagent. A new task will receive the model selected by Jev; resumed tasks are intentionally left unchanged. Restart OpenCode after changing the plugin source, build output, or `opencode.jsonc`.
+
+To exercise the fallback without calling Jev, omit `TYPESAFE_API_KEY`; new tasks will use `fallbackModel`.
+
+Routing diagnostics are appended as JSON lines to `oc-agent-router.log` in the project directory. The log records the request payload, response status and body, selected model, and failures, but never the API key.
+
 ## Options
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `models` | Required | Non-empty allowed model list in `provider/model` form. |
+| `instructions` | Built-in routing guidance | Instructions sent to Jev to guide its model choice. |
 | `fallbackModel` | First model | Used when the API key is missing, Jev errors, times out, or returns an invalid choice. Must be in `models`. |
 | `jevModel` | `jev-latest` | TypeSafe model ID. Pin a version if routing behavior must be stable. |
 | `apiKeyEnv` | `TYPESAFE_API_KEY` | Environment variable containing the TypeSafe API key. |
@@ -45,7 +61,7 @@ All configured models must already be available in OpenCode. Restart OpenCode af
 
 ## How It Works
 
-The plugin uses the documented `tool.execute.before` hook, calls `POST https://api.typesafe.ai/v1/systemone` with a Choice question whose only choices are your allowed models, then sets the task's `model` field. It leaves the task's original `subagent_type` and description unchanged.
+The plugin creates hidden model-specific variants of each subagent, calls `POST https://api.typesafe.ai/v1/systemone` with a Choice question whose only choices are your allowed models, then routes each new task to the matching hidden variant. Each variant retains the original agent's public name, prompt, and permissions, so users continue to see names such as `general` and `explore` rather than an internal routing name.
 
 Task resumes (`task_id`) are deliberately not rerouted, so a resumed session keeps its original model. API failures never expand the configured model allowlist and use `fallbackModel` instead.
 
