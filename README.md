@@ -46,8 +46,6 @@ Ask OpenCode to delegate work with a `task` subagent. A new task will receive th
 
 To exercise the fallback without calling Jev, omit `TYPESAFE_API_KEY`; new tasks will use `fallbackModel`.
 
-Routing diagnostics are appended as JSON lines to `oc-agent-router.log` in the project directory. The log records the request payload, response status and body, selected model, and failures, but never the API key.
-
 ## Options
 
 | Option | Default | Description |

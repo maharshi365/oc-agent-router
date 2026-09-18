@@ -27,7 +27,6 @@ export interface FetchResponse {
 }
 
 export type Fetcher = (input: string, init: RequestInit) => Promise<FetchResponse>
-export type Logger = (event: string, data?: unknown) => void
 
 export function routedAgentName(agent: string, model: string): string {
   return `oc-agent-router-${encode(agent)}-${encode(model)}`
@@ -77,10 +76,8 @@ export async function selectModel(
   args: TaskArgs,
   apiKey: string | undefined,
   fetcher: Fetcher = fetch,
-  log: Logger = () => {},
 ): Promise<string> {
   if (!apiKey) {
-    log("routing.skipped", { reason: "missing_api_key", fallbackModel: options.fallbackModel })
     return options.fallbackModel
   }
   const controller = new AbortController()
@@ -101,28 +98,20 @@ export async function selectModel(
         },
       },
     }
-    log("routing.request", body)
     const response = await fetcher("https://api.typesafe.ai/v1/systemone", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: controller.signal,
     })
-    log("routing.response.status", { ok: response.ok, status: response.status })
     const responseBody = await response.json()
-    log("routing.response.body", responseBody)
     if (!response.ok) return options.fallbackModel
     const choice = isRecord(responseBody) && isRecord(responseBody.answers) && isRecord(responseBody.answers.model)
       ? responseBody.answers.model.choice
       : undefined
     const model = typeof choice === "string" && options.models.includes(choice) ? choice : options.fallbackModel
-    log("routing.selected", { model })
     return model
-  } catch (error) {
-    log("routing.error", {
-      error: error instanceof Error ? { name: error.name, message: error.message } : String(error),
-      fallbackModel: options.fallbackModel,
-    })
+  } catch {
     return options.fallbackModel
   } finally {
     clearTimeout(timeout)

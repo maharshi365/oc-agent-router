@@ -1,6 +1,6 @@
 {
   "name": "oc-agent-router",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Route OpenCode subagent tasks to configured models with Jev.",
   "type": "module",
   "license": "MIT",

@@ -1,7 +1,3 @@
-// src/index.ts
-import { appendFile } from "fs/promises";
-import { join } from "path";
-
 // src/router.ts
 function routedAgentName(agent, model) {
   return `oc-agent-router-${encode(agent)}-${encode(model)}`;
@@ -34,10 +30,8 @@ function parseOptions(value) {
     fallbackModel
   };
 }
-async function selectModel(options, args, apiKey, fetcher = fetch, log = () => {
-}) {
+async function selectModel(options, args, apiKey, fetcher = fetch) {
   if (!apiKey) {
-    log("routing.skipped", { reason: "missing_api_key", fallbackModel: options.fallbackModel });
     return options.fallbackModel;
   }
   const controller = new AbortController();
@@ -58,26 +52,18 @@ async function selectModel(options, args, apiKey, fetcher = fetch, log = () => {
         }
       }
     };
-    log("routing.request", body);
     const response = await fetcher("https://api.typesafe.ai/v1/systemone", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: controller.signal
     });
-    log("routing.response.status", { ok: response.ok, status: response.status });
     const responseBody = await response.json();
-    log("routing.response.body", responseBody);
     if (!response.ok) return options.fallbackModel;
     const choice = isRecord(responseBody) && isRecord(responseBody.answers) && isRecord(responseBody.answers.model) ? responseBody.answers.model.choice : void 0;
     const model = typeof choice === "string" && options.models.includes(choice) ? choice : options.fallbackModel;
-    log("routing.selected", { model });
     return model;
-  } catch (error) {
-    log("routing.error", {
-      error: error instanceof Error ? { name: error.name, message: error.message } : String(error),
-      fallbackModel: options.fallbackModel
-    });
+  } catch {
     return options.fallbackModel;
   } finally {
     clearTimeout(timeout);
@@ -97,17 +83,8 @@ function isRecord(value) {
 // src/index.ts
 var plugin = async (input, rawOptions) => {
   const options = parseOptions(rawOptions);
-  const logFile = join(input.directory, "oc-agent-router.log");
-  const log = (event, data) => {
-    const entry = JSON.stringify({ timestamp: (/* @__PURE__ */ new Date()).toISOString(), event, data });
-    void appendFile(logFile, `${entry}
-`).catch((error) => {
-      console.error("[oc-agent-router] failed to write log file", error);
-    });
-  };
   const routeableAgents = /* @__PURE__ */ new Set();
   const routedAgents = /* @__PURE__ */ new Map();
-  log("plugin.initialized", { logFile });
   return {
     async config(config) {
       config.agent ??= {};
@@ -136,11 +113,10 @@ var plugin = async (input, rawOptions) => {
       const args = output.args;
       if (typeof args.subagent_type !== "string" || typeof args.prompt !== "string" || args.task_id) return;
       if (args.subagent_type.startsWith("oc-agent-router-") || !routeableAgents.has(args.subagent_type)) return;
-      const model = await selectModel(options, args, process.env[options.apiKeyEnv], fetch, log);
+      const model = await selectModel(options, args, process.env[options.apiKeyEnv], fetch);
       const requestedAgent = args.subagent_type;
       const routedAgent = routedAgentName(requestedAgent, model);
       args.subagent_type = routedAgent;
-      log("routing.applied", { requestedAgent, routedAgent, model });
     },
     event: async ({ event }) => {
       if (event.type !== "message.part.updated") return;
@@ -153,7 +129,6 @@ var plugin = async (input, rawOptions) => {
       if (!requestedAgent) return;
       const client = input.client._client;
       if (!client) {
-        log("routing.display_restore_failed", { reason: "missing_internal_client", requestedAgent, routedAgent });
         return;
       }
       const restoredPart = {
@@ -164,23 +139,13 @@ var plugin = async (input, rawOptions) => {
         }
       };
       try {
-        const result = await client.patch({
+        await client.patch({
           url: "/session/{sessionID}/message/{messageID}/part/{partID}",
           path: { sessionID: part.sessionID, messageID: part.messageID, partID: part.id },
           body: restoredPart,
           headers: { "Content-Type": "application/json" }
         });
-        if (result.error) {
-          log("routing.display_restore_failed", { error: result.error, requestedAgent, routedAgent });
-          return;
-        }
-        log("routing.display_restored", { requestedAgent, routedAgent });
-      } catch (error) {
-        log("routing.display_restore_failed", {
-          error: error instanceof Error ? { name: error.name, message: error.message } : String(error),
-          requestedAgent,
-          routedAgent
-        });
+      } catch {
       }
     }
   };

@@ -1,6 +1,4 @@
 import type { Config, Plugin } from "@opencode-ai/plugin"
-import { appendFile } from "node:fs/promises"
-import { join } from "node:path"
 import { parseOptions, routedAgentConfig, routedAgentName, selectModel, type RouterOptions } from "./router.js"
 
 interface InternalClient {
@@ -14,17 +12,8 @@ interface InternalClient {
 
 const plugin: Plugin = async (input, rawOptions) => {
   const options = parseOptions(rawOptions)
-  const logFile = join(input.directory, "oc-agent-router.log")
-  const log = (event: string, data?: unknown) => {
-    const entry = JSON.stringify({ timestamp: new Date().toISOString(), event, data })
-    void appendFile(logFile, `${entry}\n`).catch((error: unknown) => {
-      console.error("[oc-agent-router] failed to write log file", error)
-    })
-  }
   const routeableAgents = new Set<string>()
   const routedAgents = new Map<string, string>()
-
-  log("plugin.initialized", { logFile })
 
   return {
     async config(config: Config) {
@@ -62,11 +51,10 @@ const plugin: Plugin = async (input, rawOptions) => {
       if (typeof args.subagent_type !== "string" || typeof args.prompt !== "string" || args.task_id) return
       if (args.subagent_type.startsWith("oc-agent-router-") || !routeableAgents.has(args.subagent_type)) return
 
-      const model = await selectModel(options, args, process.env[options.apiKeyEnv], fetch, log)
+      const model = await selectModel(options, args, process.env[options.apiKeyEnv], fetch)
       const requestedAgent = args.subagent_type
       const routedAgent = routedAgentName(requestedAgent, model)
       args.subagent_type = routedAgent
-      log("routing.applied", { requestedAgent, routedAgent, model })
     },
     event: async ({ event }) => {
       if (event.type !== "message.part.updated") return
@@ -80,7 +68,6 @@ const plugin: Plugin = async (input, rawOptions) => {
 
       const client = (input.client as unknown as { _client?: InternalClient })._client
       if (!client) {
-        log("routing.display_restore_failed", { reason: "missing_internal_client", requestedAgent, routedAgent })
         return
       }
       const restoredPart = {
@@ -91,23 +78,14 @@ const plugin: Plugin = async (input, rawOptions) => {
         },
       }
       try {
-        const result = await client.patch({
+        await client.patch({
           url: "/session/{sessionID}/message/{messageID}/part/{partID}",
           path: { sessionID: part.sessionID, messageID: part.messageID, partID: part.id },
           body: restoredPart,
           headers: { "Content-Type": "application/json" },
         })
-        if (result.error) {
-          log("routing.display_restore_failed", { error: result.error, requestedAgent, routedAgent })
-          return
-        }
-        log("routing.display_restored", { requestedAgent, routedAgent })
-      } catch (error) {
-        log("routing.display_restore_failed", {
-          error: error instanceof Error ? { name: error.name, message: error.message } : String(error),
-          requestedAgent,
-          routedAgent,
-        })
+      } catch {
+        // Keep the routed name on display-restore failure; routing itself succeeded.
       }
     },
   }

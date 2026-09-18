@@ -13,7 +13,6 @@ test("validates models and defaults to the first one", () => {
 
 test("uses Jev's configured choice", async () => {
   const instructions = "Prefer the fastest model for exploratory tasks."
-  const events: Array<{ event: string; data: unknown }> = []
   const model = await selectModel(
     parseOptions({ models, instructions }),
     { prompt: "Implement the parser", subagent_type: "general" },
@@ -24,15 +23,8 @@ test("uses Jev's configured choice", async () => {
       assert.equal(body.questions.model.instructions, instructions)
       return { ok: true, status: 200, json: async () => ({ answers: { model: { choice: models[1] } } }) }
     },
-    (event, data) => events.push({ event, data }),
   )
   assert.equal(model, models[1])
-  assert.deepEqual(events.map(({ event }) => event), [
-    "routing.request",
-    "routing.response.status",
-    "routing.response.body",
-    "routing.selected",
-  ])
 })
 
 test("defaults routing instructions when omitted", () => {

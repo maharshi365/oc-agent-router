@@ -26,10 +26,9 @@ interface FetchResponse {
     json(): Promise<unknown>;
 }
 type Fetcher = (input: string, init: RequestInit) => Promise<FetchResponse>;
-type Logger = (event: string, data?: unknown) => void;
 declare function routedAgentName(agent: string, model: string): string;
 declare function parseOptions(value: unknown): Required<RouterOptions>;
-declare function selectModel(options: Required<RouterOptions>, args: TaskArgs, apiKey: string | undefined, fetcher?: Fetcher, log?: Logger): Promise<string>;
+declare function selectModel(options: Required<RouterOptions>, args: TaskArgs, apiKey: string | undefined, fetcher?: Fetcher): Promise<string>;
 
 declare const plugin: Plugin;
 
