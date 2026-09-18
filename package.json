@@ -1,0 +1,47 @@
+{
+  "name": "oc-agent-router",
+  "version": "0.1.0",
+  "description": "Route OpenCode subagent tasks to configured models with Jev.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maharshi365/oc-agent-router.git"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "check": "tsc --noEmit",
+    "test": "tsx --test test/**/*.test.ts",
+    "verify": "npm run check && npm test && npm run build"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.18.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "1.18.31",
+    "@types/node": "^24.0.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "subagent",
+    "model-routing",
+    "jev"
+  ]
+}
