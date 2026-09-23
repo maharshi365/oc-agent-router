@@ -1,16 +1,7 @@
+// src/index.ts
+import { Plugin } from "@opencode/plugin";
+
 // src/router.ts
-function routedAgentName(agent, model) {
-  return `oc-agent-router-${encode(agent)}-${encode(model)}`;
-}
-function routedAgentConfig(name, agent, model) {
-  return {
-    ...agent,
-    name,
-    model,
-    mode: "subagent",
-    hidden: true
-  };
-}
 function parseOptions(value) {
   if (!isRecord(value) || !Array.isArray(value.models)) {
     throw new Error("oc-agent-router requires a non-empty models array");
@@ -19,20 +10,27 @@ function parseOptions(value) {
   if (models.length !== value.models.length || models.length === 0) {
     throw new Error("oc-agent-router models must be provider/model strings");
   }
-  const fallbackModel = typeof value.fallbackModel === "string" ? value.fallbackModel : models[0];
-  if (!models.includes(fallbackModel)) throw new Error("oc-agent-router fallbackModel must appear in models");
+  const agents = value.agents === void 0 ? void 0 : Array.isArray(value.agents) && value.agents.every((agent) => typeof agent === "string" && agent.trim()) ? value.agents : void 0;
+  if (value.agents !== void 0 && agents === void 0) {
+    throw new Error("oc-agent-router agents must be an array of non-empty agent IDs");
+  }
+  const confidenceThreshold = value.confidenceThreshold === void 0 ? 0.8 : typeof value.confidenceThreshold === "number" && Number.isFinite(value.confidenceThreshold) ? value.confidenceThreshold : void 0;
+  if (confidenceThreshold === void 0 || confidenceThreshold < 0 || confidenceThreshold > 1) {
+    throw new Error("oc-agent-router confidenceThreshold must be a number from 0 to 1");
+  }
   return {
     models,
+    agents,
+    confidenceThreshold,
     instructions: typeof value.instructions === "string" && value.instructions.trim() ? value.instructions : "Choose the configured model most suitable for completing this OpenCode subagent task. Prefer a capable model for implementation, debugging, and complex reasoning; prefer an efficient model for focused exploration or simple tasks.",
     jevModel: typeof value.jevModel === "string" ? value.jevModel : "jev-latest",
     apiKeyEnv: typeof value.apiKeyEnv === "string" ? value.apiKeyEnv : "TYPESAFE_API_KEY",
-    timeoutMs: typeof value.timeoutMs === "number" && value.timeoutMs >= 100 && value.timeoutMs <= 3e4 ? value.timeoutMs : 5e3,
-    fallbackModel
+    timeoutMs: typeof value.timeoutMs === "number" && value.timeoutMs >= 100 && value.timeoutMs <= 3e4 ? value.timeoutMs : 5e3
   };
 }
 async function selectModel(options, args, apiKey, fetcher = fetch) {
   if (!apiKey) {
-    return options.fallbackModel;
+    return void 0;
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
@@ -42,13 +40,13 @@ async function selectModel(options, args, apiKey, fetcher = fetch) {
       state: {
         task: typeof args.prompt === "string" ? args.prompt : "",
         description: typeof args.description === "string" ? args.description : "",
-        requested_agent: typeof args.subagent_type === "string" ? args.subagent_type : ""
+        requested_agent: typeof args.agent === "string" ? args.agent : ""
       },
       questions: {
         model: {
           type: "choice",
           instructions: options.instructions,
-          criteria: Object.fromEntries(options.models.map((model2) => [model2, `Use the configured OpenCode model ${model2}.`]))
+          criteria: Object.fromEntries(options.models.map((model) => [model, `Use the configured OpenCode model ${model}.`]))
         }
       }
     };
@@ -59,12 +57,15 @@ async function selectModel(options, args, apiKey, fetcher = fetch) {
       signal: controller.signal
     });
     const responseBody = await response.json();
-    if (!response.ok) return options.fallbackModel;
-    const choice = isRecord(responseBody) && isRecord(responseBody.answers) && isRecord(responseBody.answers.model) ? responseBody.answers.model.choice : void 0;
-    const model = typeof choice === "string" && options.models.includes(choice) ? choice : options.fallbackModel;
-    return model;
+    if (!response.ok) return void 0;
+    const answer = isRecord(responseBody) && isRecord(responseBody.answers) && isRecord(responseBody.answers.model) ? responseBody.answers.model : void 0;
+    const choice = isRecord(answer) ? answer.choice : void 0;
+    const confidence = isRecord(answer) ? answer.confidence : void 0;
+    if (typeof choice !== "string" || !options.models.includes(choice) || typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < options.confidenceThreshold)
+      return void 0;
+    return choice;
   } catch {
-    return options.fallbackModel;
+    return void 0;
   } finally {
     clearTimeout(timeout);
   }
@@ -73,87 +74,28 @@ function isModel(value) {
   const separator = value.indexOf("/");
   return separator > 0 && separator < value.length - 1;
 }
-function encode(value) {
-  return Array.from(value, (character) => character.codePointAt(0).toString(36)).join("-");
-}
 function isRecord(value) {
   return typeof value === "object" && value !== null;
 }
 
 // src/index.ts
-var plugin = async (input, rawOptions) => {
-  const options = parseOptions(rawOptions);
-  const routeableAgents = /* @__PURE__ */ new Set();
-  const routedAgents = /* @__PURE__ */ new Map();
-  return {
-    async config(config) {
-      config.agent ??= {};
-      const agents = config.agent;
-      const sourceAgents = {
-        general: agents.general ?? { mode: "subagent" },
-        explore: agents.explore ?? { mode: "subagent" },
-        ...Object.fromEntries(
-          Object.entries(agents).filter(
-            (entry) => Boolean(entry[1]) && !entry[0].startsWith("oc-agent-router-") && entry[0] !== "build" && entry[0] !== "plan" && entry[1]?.mode !== "primary" && entry[1]?.disable !== true
-          )
-        )
-      };
-      for (const [name, agent] of Object.entries(sourceAgents)) {
-        routeableAgents.add(name);
-        for (const model of options.models) {
-          const routeName = routedAgentName(name, model);
-          routedAgents.set(routeName, name);
-          if (agents[routeName]) continue;
-          agents[routeName] = routedAgentConfig(name, agent, model);
-        }
-      }
-    },
-    "tool.execute.before": async (input2, output) => {
-      if (input2.tool !== "task") return;
-      const args = output.args;
-      if (typeof args.subagent_type !== "string" || typeof args.prompt !== "string" || args.task_id) return;
-      if (args.subagent_type.startsWith("oc-agent-router-") || !routeableAgents.has(args.subagent_type)) return;
-      const model = await selectModel(options, args, process.env[options.apiKeyEnv], fetch);
-      const requestedAgent = args.subagent_type;
-      const routedAgent = routedAgentName(requestedAgent, model);
-      args.subagent_type = routedAgent;
-    },
-    event: async ({ event }) => {
-      if (event.type !== "message.part.updated") return;
-      const part = event.properties.part;
-      if (part.type !== "tool" || part.tool !== "task") return;
-      if (part.state.status !== "completed" && part.state.status !== "error") return;
-      const routedAgent = part.state.input.subagent_type;
-      if (typeof routedAgent !== "string") return;
-      const requestedAgent = routedAgents.get(routedAgent);
-      if (!requestedAgent) return;
-      const client = input.client._client;
-      if (!client) {
+var plugin = Plugin.define({
+  id: "oc-agent-router",
+  async setup(ctx) {
+    const options = parseOptions(ctx.options);
+    await ctx.tool.hook("execute.before", async (event) => {
+      if (event.tool !== "subagent") return;
+      const input = event.input;
+      if (typeof input.agent !== "string" || typeof input.prompt !== "string" || input.model !== void 0 || input.sessionID !== void 0 || options.agents !== void 0 && !options.agents.includes(input.agent))
         return;
-      }
-      const restoredPart = {
-        ...part,
-        state: {
-          ...part.state,
-          input: { ...part.state.input, subagent_type: requestedAgent }
-        }
-      };
-      try {
-        await client.patch({
-          url: "/session/{sessionID}/message/{messageID}/part/{partID}",
-          path: { sessionID: part.sessionID, messageID: part.messageID, partID: part.id },
-          body: restoredPart,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch {
-      }
-    }
-  };
-};
+      const model = await selectModel(options, input, process.env[options.apiKeyEnv], fetch);
+      if (model !== void 0) input.model = model;
+    });
+  }
+});
 var index_default = plugin;
 export {
   index_default as default,
   parseOptions,
-  routedAgentName,
   selectModel
 };

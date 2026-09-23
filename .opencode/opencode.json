@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    [
+      "../dist/",
+      {
+        "models": [
+          "openai/gpt-6-sol",
+          "openai/gpt-5.6-terra",
+          "openai/gpt-6-luna"
+        ],
+        "confidenceThreshold": 0.8,
+        "instructions": "Choose the least expensive model likely to complete this subagent task reliably, using its actual requested work rather than its agent name. Route quick read-only lookups and single-file location questions to luna; well-scoped edits or moderate debugging to terra; complex multi-file work, ambiguous debugging and architecture to sol. Do not upgrade a simple lookup just because it mentions code, tests, or a plugin.",
+        "timeoutMs": 5000
+      }
+    ]
+  ]
+}

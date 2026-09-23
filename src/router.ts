@@ -1,6 +1,10 @@
 export interface RouterOptions {
   /** Models eligible to receive subagent tasks, in OpenCode provider/model form. */
   models: string[]
+  /** Subagent IDs eligible for routing. When omitted, all subagents are eligible. */
+  agents?: string[]
+  /** Minimum Jev choice confidence required to override the child model. Defaults to 0.8. */
+  confidenceThreshold?: number
   /** Routing guidance sent to Jev. */
   instructions?: string
   /** TypeSafe model ID used for routing. Defaults to jev-latest. */
@@ -9,15 +13,20 @@ export interface RouterOptions {
   apiKeyEnv?: string
   /** Maximum time to wait for a route decision. Defaults to 5000. */
   timeoutMs?: number
-  /** Model to use when Jev is unavailable or returns an invalid answer. Defaults to the first model. */
-  fallbackModel?: string
 }
 
-export interface TaskArgs {
+export interface ParsedRouterOptions extends Omit<Required<RouterOptions>, "agents"> {
+  agents?: string[]
+}
+
+export interface SubagentArgs {
   description?: unknown
   prompt?: unknown
-  subagent_type?: unknown
-  task_id?: unknown
+  agent?: unknown
+  /** An explicit model is not overridden by the router. */
+  model?: unknown
+  /** Resumed child sessions keep their existing model. */
+  sessionID?: unknown
 }
 
 export interface FetchResponse {
@@ -28,25 +37,7 @@ export interface FetchResponse {
 
 export type Fetcher = (input: string, init: RequestInit) => Promise<FetchResponse>
 
-export function routedAgentName(agent: string, model: string): string {
-  return `oc-agent-router-${encode(agent)}-${encode(model)}`
-}
-
-export function routedAgentConfig(
-  name: string,
-  agent: Record<string, unknown>,
-  model: string,
-): Record<string, unknown> {
-  return {
-    ...agent,
-    name,
-    model,
-    mode: "subagent",
-    hidden: true,
-  }
-}
-
-export function parseOptions(value: unknown): Required<RouterOptions> {
+export function parseOptions(value: unknown): ParsedRouterOptions {
   if (!isRecord(value) || !Array.isArray(value.models)) {
     throw new Error("oc-agent-router requires a non-empty models array")
   }
@@ -54,11 +45,27 @@ export function parseOptions(value: unknown): Required<RouterOptions> {
   if (models.length !== value.models.length || models.length === 0) {
     throw new Error("oc-agent-router models must be provider/model strings")
   }
-  const fallbackModel = typeof value.fallbackModel === "string" ? value.fallbackModel : models[0]
-  if (!models.includes(fallbackModel)) throw new Error("oc-agent-router fallbackModel must appear in models")
+  const agents = value.agents === undefined
+    ? undefined
+    : Array.isArray(value.agents) && value.agents.every((agent) => typeof agent === "string" && agent.trim())
+      ? value.agents
+      : undefined
+  if (value.agents !== undefined && agents === undefined) {
+    throw new Error("oc-agent-router agents must be an array of non-empty agent IDs")
+  }
+  const confidenceThreshold = value.confidenceThreshold === undefined
+    ? 0.8
+    : typeof value.confidenceThreshold === "number" && Number.isFinite(value.confidenceThreshold)
+      ? value.confidenceThreshold
+      : undefined
+  if (confidenceThreshold === undefined || confidenceThreshold < 0 || confidenceThreshold > 1) {
+    throw new Error("oc-agent-router confidenceThreshold must be a number from 0 to 1")
+  }
 
   return {
     models,
+    agents,
+    confidenceThreshold,
     instructions: typeof value.instructions === "string" && value.instructions.trim()
       ? value.instructions
       : "Choose the configured model most suitable for completing this OpenCode subagent task. Prefer a capable model for implementation, debugging, and complex reasoning; prefer an efficient model for focused exploration or simple tasks.",
@@ -67,18 +74,17 @@ export function parseOptions(value: unknown): Required<RouterOptions> {
     timeoutMs: typeof value.timeoutMs === "number" && value.timeoutMs >= 100 && value.timeoutMs <= 30_000
       ? value.timeoutMs
       : 5_000,
-    fallbackModel,
   }
 }
 
 export async function selectModel(
-  options: Required<RouterOptions>,
-  args: TaskArgs,
+  options: ParsedRouterOptions,
+  args: SubagentArgs,
   apiKey: string | undefined,
   fetcher: Fetcher = fetch,
-): Promise<string> {
+): Promise<string | undefined> {
   if (!apiKey) {
-    return options.fallbackModel
+    return undefined
   }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs)
@@ -88,7 +94,7 @@ export async function selectModel(
       state: {
         task: typeof args.prompt === "string" ? args.prompt : "",
         description: typeof args.description === "string" ? args.description : "",
-        requested_agent: typeof args.subagent_type === "string" ? args.subagent_type : "",
+        requested_agent: typeof args.agent === "string" ? args.agent : "",
       },
       questions: {
         model: {
@@ -105,14 +111,23 @@ export async function selectModel(
       signal: controller.signal,
     })
     const responseBody = await response.json()
-    if (!response.ok) return options.fallbackModel
-    const choice = isRecord(responseBody) && isRecord(responseBody.answers) && isRecord(responseBody.answers.model)
-      ? responseBody.answers.model.choice
+    if (!response.ok) return undefined
+    const answer = isRecord(responseBody) && isRecord(responseBody.answers) && isRecord(responseBody.answers.model)
+      ? responseBody.answers.model
       : undefined
-    const model = typeof choice === "string" && options.models.includes(choice) ? choice : options.fallbackModel
-    return model
+    const choice = isRecord(answer) ? answer.choice : undefined
+    const confidence = isRecord(answer) ? answer.confidence : undefined
+    if (
+      typeof choice !== "string" ||
+      !options.models.includes(choice) ||
+      typeof confidence !== "number" ||
+      !Number.isFinite(confidence) ||
+      confidence < options.confidenceThreshold
+    )
+      return undefined
+    return choice
   } catch {
-    return options.fallbackModel
+    return undefined
   } finally {
     clearTimeout(timeout)
   }
@@ -121,10 +136,6 @@ export async function selectModel(
 function isModel(value: string): boolean {
   const separator = value.indexOf("/")
   return separator > 0 && separator < value.length - 1
-}
-
-function encode(value: string): string {
-  return Array.from(value, (character) => character.codePointAt(0)!.toString(36)).join("-")
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
