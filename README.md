@@ -2,6 +2,8 @@
 
 An OpenCode plugin that routes each new `task` subagent to one of your configured models. It asks [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) for a structured choice immediately before OpenCode creates the child session.
 
+**Compatibility:** This plugin supports OpenCode v2 only. OpenCode v1 is not supported.
+
 ## Install
 
 ```sh
