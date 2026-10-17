@@ -9,7 +9,7 @@ harnesses:
     type: opencode
     version: 2.0.26
     model: opencode/glm-5.3-flash-free
-    reasoningEffort: medium
+    reasoningEffort: default
     auth:
       - method: opencode_api_key
         secretName: OPENCODE_API_KEY
