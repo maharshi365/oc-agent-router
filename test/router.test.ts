@@ -38,6 +38,26 @@ test("defaults routing instructions when omitted", () => {
   assert.match(parseOptions({ models }).instructions, /Choose the configured model/)
 })
 
+test("rejects response confidence outside the inclusive range zero to one", async () => {
+  const options = parseOptions({ models })
+  assert.equal(
+    await selectModel(options, {}, "secret", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ answers: { model: { choice: models[0], confidence: 1.1 } } }),
+    })),
+    undefined,
+  )
+  assert.equal(
+    await selectModel(options, {}, "secret", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ answers: { model: { choice: models[0], confidence: -0.1 } } }),
+    })),
+    undefined,
+  )
+})
+
 test("does not override a model when Jev is unavailable or uncertain", async () => {
   const options = parseOptions({ models, confidenceThreshold: 0.9 })
   assert.equal(await selectModel(options, {}, undefined), undefined)

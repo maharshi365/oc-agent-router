@@ -122,6 +122,8 @@ export async function selectModel(
       !options.models.includes(choice) ||
       typeof confidence !== "number" ||
       !Number.isFinite(confidence) ||
+      confidence < 0 ||
+      confidence > 1 ||
       confidence < options.confidenceThreshold
     )
       return undefined
