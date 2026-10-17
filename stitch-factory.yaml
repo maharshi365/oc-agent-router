@@ -1,0 +1,101 @@
+schemaVersion: 1
+name: Issue to reviewed pull request
+description: Fixes GitHub issues, runs tests, and reviews each pull request.
+execution:
+  environmentVariables: []
+harnesses:
+  - key: delivery-agent
+    name: OpenCode delivery agent
+    type: opencode
+    version: 2.0.26
+    model: opencode/muse-spark-1.3-contributor-free
+    reasoningEffort: medium
+    auth:
+      - method: opencode_api_key
+        secretName: OPENCODE_API_KEY
+sandboxes:
+  - key: vercel-platform
+    name: Vercel platform sandbox
+    provider: vercel
+    auth:
+      mode: byok
+      teamId: team_yRwlz6Xci0b0XJvSVquRC77h
+      projectId: prj_Xa9SBqV2n4wsPr42mBfEeqeAtOuf
+      tokenSecretName: VERCEL_TOKEN
+    resources:
+      vcpus: 4
+    timeoutMs: 2700000
+triggers:
+  - key: on-issue-opened
+    provider: github
+    repository: maharshi365/oc-agent-router
+    name: Implement newly opened issue
+    harness: delivery-agent
+    sandbox: vercel-platform
+    agentId: build
+    eventType: issues
+    actions: [opened]
+    initialPrompt: |-
+      Use the GitHub CLI (gh) for every GitHub operation. Start by adding an eyes reaction to the issue with gh api.
+      Inspect the issue, repository instructions, and relevant code. Implement only the issue in the event context.
+      First add a focused regression test and verify it fails for the reported bug. Then make the smallest fix and verify the test passes.
+      Use npm ci to install dependencies, then run npm run check and npm test. Do not run a build or change generated dist files.
+      Create a dedicated branch, commit the fix and test, push it, and open a non-draft pull request with Closes #<issue-number>.
+      Do not change issue labels, state, assignees, or milestones. Do not merge the pull request.
+      If blocked, leave a concise issue comment explaining why. Report the PR URL, checks, and their results.
+    guards:
+      - type: max_concurrent
+        scope: subject
+        limit: 1
+    ignoreBots: true
+    enabled: true
+  - key: on-pr-opened-or-updated
+    provider: github
+    repository: maharshi365/oc-agent-router
+    name: Review pull request for over-engineering
+    harness: delivery-agent
+    sandbox: vercel-platform
+    agentId: review
+    eventType: pull_request
+    actions: [opened, synchronize]
+    initialPrompt: |-
+      Review the pull request in the event context. Invoke the code-review skill and follow the repository review agent instructions.
+      Use gh for every GitHub operation. Start by adding an eyes reaction to the pull request with gh api.
+      Review only for unnecessary complexity and low-value tests. Do not edit repository files or merge the PR.
+      If changes are needed, submit exactly one review through gh api with event COMMENT and all actionable findings in its inline comments array.
+      Verify the review is COMMENTED and contains the expected inline comments before adding the work_needed label.
+      If no changes are needed, post one regular PR comment stating that the PR was reviewed for over-engineering and no actionable findings were found. Do not submit a review or add work_needed in this case.
+    guards:
+      - type: max_concurrent
+        scope: subject
+        limit: 1
+    ignoreBots: false
+    ignoreDrafts: true
+    enabled: true
+  - key: on-pr-work-needed
+    provider: github
+    repository: maharshi365/oc-agent-router
+    name: Fix review findings
+    harness: delivery-agent
+    sandbox: vercel-platform
+    agentId: build
+    eventType: pull_request
+    actions: [labeled]
+    labels: [work_needed]
+    labelScope: changed
+    initialPrompt: |-
+      Use gh for every GitHub operation. Inspect all actionable feedback and unresolved review threads on the pull request in the event context.
+      Before fixing each inline comment, add an eyes reaction to it with gh api.
+      Address only the requested changes on the existing PR branch. Run npm ci, npm run check, and npm test. Do not run builds or change generated dist files.
+      Commit the fixes. Resolve addressed review threads and verify no actionable unresolved threads remain.
+      If all findings are addressed, remove work_needed before pushing so the next review can add it again. Push to trigger another review.
+      Reply directly to each addressed inline thread with the change and commit SHA. Post a concise PR summary comment with the checks and results.
+      If blocked, keep the affected thread unresolved and keep work_needed. Explain the blocker in a PR comment.
+      Do not create another PR, submit a review, or merge the PR.
+    guards:
+      - type: max_concurrent
+        scope: subject
+        limit: 1
+    ignoreBots: false
+    ignoreDrafts: true
+    enabled: true
