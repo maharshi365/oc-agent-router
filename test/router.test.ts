@@ -50,3 +50,25 @@ test("does not override a model when Jev is unavailable or uncertain", async () 
     undefined,
   )
 })
+
+test("rejects response confidence outside the inclusive range [0, 1]", async () => {
+  const options = parseOptions({ models })
+  for (const confidence of [1.1, -0.1]) {
+    assert.equal(
+      await selectModel(options, {}, "secret", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ answers: { model: { choice: models[1], confidence } } }),
+      })),
+      undefined,
+    )
+  }
+  assert.equal(
+    await selectModel(options, {}, "secret", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ answers: { model: { choice: models[1], confidence: 1 } } }),
+    })),
+    models[1],
+  )
+})
